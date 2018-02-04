@@ -213,12 +213,7 @@ typedef uint32_t SerdNodeFlags;
 /**
    A syntactic RDF node.
 */
-typedef struct {
-	const char*    buf;      /**< Value string */
-	size_t         n_bytes;  /**< Size in bytes (not including null) */
-	SerdNodeFlags  flags;    /**< Node flags (e.g. string properties) */
-	SerdType       type;     /**< Node type */
-} SerdNode;
+typedef struct SerdNodeImpl SerdNode;
 
 /**
    An unterminated immutable slice of a string.
@@ -461,32 +456,25 @@ serd_uri_serialise_relative(const SerdURI* uri,
    @{
 */
 
-static const SerdNode SERD_NODE_NULL = { NULL, 0, 0, SERD_NOTHING };
-
 /**
-   Make a (shallow) node from `str`.
-
-   This measures, but does not copy, `str`.  No memory is allocated.
+   Create a new node from `str`.
 */
 SERD_API
-SerdNode
-serd_node_from_string(SerdType type, const char* str);
+SerdNode*
+serd_node_new_string(SerdType type, const char* str);
 
 /**
-   Make a (shallow) node from a prefix of `str`.
-
-   This measures, but does not copy, `str`.  No memory is allocated.
-   Note that the returned node may not be null terminated.
+   Create a new node from a prefix of `str`.
 */
 SERD_API
-SerdNode
-serd_node_from_substring(SerdType type, const char* str, size_t len);
+SerdNode*
+serd_node_new_substring(SerdType type, const char* str, size_t len);
 
 /**
    Simple wrapper for serd_node_new_uri() to resolve a URI node.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_uri_from_node(const SerdNode* uri_node,
                             const SerdURI*  base,
                             SerdURI*        out);
@@ -495,7 +483,7 @@ serd_node_new_uri_from_node(const SerdNode* uri_node,
    Simple wrapper for serd_node_new_uri() to resolve a URI string.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_uri_from_string(const char*    str,
                               const SerdURI* base,
                               SerdURI*       out);
@@ -511,7 +499,7 @@ serd_node_new_uri_from_string(const char*    str,
    If `out` is not NULL, it will be set to the parsed URI.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_file_uri(const char* path,
                        const char* hostname,
                        SerdURI*    out,
@@ -528,7 +516,7 @@ serd_node_new_file_uri(const char* path,
    memory owned by the new returned node).
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_uri(const SerdURI* uri, const SerdURI* base, SerdURI* out);
 
 /**
@@ -544,7 +532,7 @@ serd_node_new_uri(const SerdURI* uri, const SerdURI* base, SerdURI* out);
    memory owned by the new returned node).
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_relative_uri(const SerdURI* uri,
                            const SerdURI* base,
                            const SerdURI* root,
@@ -566,14 +554,14 @@ serd_node_new_relative_uri(const SerdURI* uri,
    @param frac_digits The maximum number of digits after the decimal place.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_decimal(double d, unsigned frac_digits);
 
 /**
    Create a new node by serialising `i` into an xsd:integer string.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_integer(int64_t i);
 
 /**
@@ -586,17 +574,25 @@ serd_node_new_integer(int64_t i);
    @param wrap_lines Wrap lines at 76 characters to conform to RFC 2045.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_new_blob(const void* buf, size_t size, bool wrap_lines);
 
 /**
-   Make a deep copy of `node`.
-
-   @return a node that the caller must free with serd_node_free().
+   Return a deep copy of `node`.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_node_copy(const SerdNode* node);
+
+/**
+   Free any data owned by `node`.
+
+   Note that if `node` is itself dynamically allocated (which is not the case
+   for nodes created internally by serd), it will not be freed.
+*/
+SERD_API
+void
+serd_node_free(SerdNode* node);
 
 /**
    Return the type of a node (SERD_URI, SERD_BLANK, or SERD_LITERAL).
@@ -758,10 +754,10 @@ serd_env_set_prefix_from_strings(SerdEnv*    env,
 */
 SERD_API
 bool
-serd_env_qualify(const SerdEnv*  env,
-                 const SerdNode* uri,
-                 SerdNode*       prefix,
-                 SerdStringView* suffix);
+serd_env_qualify(const SerdEnv*   env,
+                 const SerdNode*  uri,
+                 const SerdNode** prefix,
+                 SerdStringView*  suffix);
 
 /**
    Expand `curie`.
@@ -782,7 +778,7 @@ serd_env_expand(const SerdEnv*  env,
    Returns null if `node` can not be expanded.
 */
 SERD_API
-SerdNode
+SerdNode*
 serd_env_expand_node(const SerdEnv*  env,
                      const SerdNode* node);
 
