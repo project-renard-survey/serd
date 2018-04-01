@@ -194,8 +194,10 @@ typedef enum {
    Flags indicating certain string properties relevant to serialisation.
 */
 typedef enum {
-	SERD_HAS_NEWLINE = 1,      /**< Contains line breaks ('\\n' or '\\r') */
-	SERD_HAS_QUOTE   = 1 << 1  /**< Contains quotes ('"') */
+	SERD_HAS_NEWLINE  = 1,      /**< Contains line breaks ('\\n' or '\\r') */
+	SERD_HAS_QUOTE    = 1 << 1, /**< Contains quotes ('"') */
+	SERD_HAS_DATATYPE = 1 << 2, /**< Literal node has datatype */
+	SERD_HAS_LANGUAGE = 1 << 3  /**< Literal node has language */
 } SerdNodeFlag;
 
 /**
@@ -453,6 +455,16 @@ SerdNode*
 serd_node_new_substring(SerdType type, const char* str, size_t len);
 
 /**
+   Create a new literal node from `str`.
+
+   Either `datatype` or `lang` can be given, but not both, unless `datatype` is
+   rdf:langString in which case it is ignored.
+*/
+SERD_API
+SerdNode*
+serd_node_new_literal(const char* str, const char* datatype, const char* lang);
+
+/**
    Simple wrapper for serd_node_new_uri() to resolve a URI node.
 */
 SERD_API
@@ -605,6 +617,20 @@ SerdNodeFlags
 serd_node_get_flags(const SerdNode* node);
 
 /**
+   Return the datatype of a literal node, or NULL.
+*/
+SERD_API
+const SerdNode*
+serd_node_get_datatype(const SerdNode* node);
+
+/**
+   Return the language tag of a literal node, or NULL.
+*/
+SERD_API
+const SerdNode*
+serd_node_get_language(const SerdNode* node);
+
+/**
    Return true iff `a` is equal to `b`.
 */
 SERD_API
@@ -663,9 +689,7 @@ typedef SerdStatus (*SerdStatementSink)(void*              handle,
                                         const SerdNode*    graph,
                                         const SerdNode*    subject,
                                         const SerdNode*    predicate,
-                                        const SerdNode*    object,
-                                        const SerdNode*    object_datatype,
-                                        const SerdNode*    object_lang);
+                                        const SerdNode*    object);
 
 /**
    Sink (callback) for anonymous node end markers.
@@ -1054,9 +1078,7 @@ serd_writer_write_statement(SerdWriter*        writer,
                             const SerdNode*    graph,
                             const SerdNode*    subject,
                             const SerdNode*    predicate,
-                            const SerdNode*    object,
-                            const SerdNode*    datatype,
-                            const SerdNode*    lang);
+                            const SerdNode*    object);
 
 /**
    Mark the end of an anonymous node's description.
