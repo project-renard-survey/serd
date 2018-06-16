@@ -10,6 +10,7 @@ Checks: >
   -cert-msc30-c,
   -cert-msc50-cpp,
   -clang-analyzer-alpha.*,
+  -cppcoreguidelines-init-variables,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-reinterpret-cast,
