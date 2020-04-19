@@ -29,10 +29,12 @@ post_tags    = ['Hacking', 'RDF', 'Serd']
 def options(ctx):
     ctx.load('compiler_c')
     ctx.load('compiler_cxx')
+    ctx.load('python')
     opt = ctx.configuration_options()
     ctx.add_flags(
         opt,
         {'no-utils':     'do not build command line utilities',
+         'no-bindings':  'do not build python bindings',
          'stack-check':  'include runtime stack sanity checks',
          'static':       'build static library',
          'no-shared':    'do not build shared library',
@@ -45,6 +47,15 @@ def configure(conf):
     conf.load('compiler_c', cache=True)
     conf.load('compiler_cxx', cache=True)
     conf.load('autowaf', cache=True)
+
+    if not Options.options.no_bindings:
+        try:
+            conf.load('python', cache=True)
+            conf.check_python_version((2,6,0))
+            conf.env.SERD_PYTHON = 1
+        except:
+            Logs.warn('Failed to configure Python (%s)\n' % sys.exc_info()[1])
+
     autowaf.set_c_lang(conf, 'c99')
     autowaf.set_cxx_lang(conf, 'c++11')
 
@@ -122,7 +133,8 @@ def configure(conf):
         {'Build static library': bool(conf.env['BUILD_STATIC']),
          'Build shared library': bool(conf.env['BUILD_SHARED']),
          'Build utilities':      bool(conf.env['BUILD_UTILS']),
-         'Build unit tests':     bool(conf.env['BUILD_TESTS'])})
+         'Build unit tests':     bool(conf.env['BUILD_TESTS']),
+         'Python bindings':      bool(conf.env['SERD_PYTHON'])})
 
 lib_headers = ['src/reader.h']
 
@@ -205,6 +217,14 @@ def build(bld):
             defines         = defines + ['SERD_INTERNAL'],
             **lib_args)
 
+    # Python bindings
+    if bld.env.SERD_PYTHON:
+        bld(features     = 'subst',
+            is_copy      = True,
+            source       = 'bindings/python/serd.py',
+            target       = 'bindings/python/serd.py',
+            install_path = '${PYTHONDIR}')
+
     if bld.env.BUILD_TESTS:
         test_args = {'includes':     ['.', './src'],
                      'cflags':       [''] if bld.env.NO_COVERAGE else ['--coverage'],
@@ -246,12 +266,22 @@ def build(bld):
                       defines      = defines,
                       **test_args)
 
+        # C++ API test
         bld(features     = 'cxx cxxprogram',
             source       = 'tests/serd_cxx_test.cpp',
             use          = 'libserd_profiled',
             target       = 'serd_cxx_test',
             defines      = defines,
             **test_args)
+
+        # Python API test
+        if bld.env.SERD_PYTHON:
+            # Copy test to build directory
+            bld(features     = 'subst',
+                is_copy      = True,
+                source       = 'bindings/python/test_serd.py',
+                target       = 'bindings/python/test_serd.py',
+                install_path = None)
 
     # Utilities
     if bld.env.BUILD_UTILS:
@@ -587,6 +617,10 @@ def test(tst):
             pass
 
     srcdir = tst.path.abspath()
+
+    if tst.env.SERD_PYTHON:
+        with tst.group('python') as check:
+            check(['python', '-m', 'unittest', 'discover', 'bindings/python'])
 
     with tst.group('Unit') as check:
         check(['./base64_test'])
