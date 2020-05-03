@@ -37,7 +37,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 5)
         self.assertIsNone(n.datatype())
         self.assertEqual(n.language(), serd.Node.string("de"))
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_LANGUAGE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_LANGUAGE)
 
     def testTypedLiteral(self):
         datatype = serd.Node.uri("http://example.org/ns#Hex")
@@ -47,7 +47,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 4)
         self.assertEqual(n.datatype(), datatype)
         self.assertIsNone(n.language())
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
 
     def testBlank(self):
         n = serd.Node.blank("b0")
@@ -76,6 +76,46 @@ class NodeTests(unittest.TestCase):
         self.assertIsNone(n.language())
         self.assertEqual(n.flags(), 0)
 
+    def testResolvedUri(self):
+        base = serd.Node.uri("http://example.org/")
+        n = serd.Node.resolved_uri("name", base)
+        self.assertEqual(n.type(), serd.NodeType.URI)
+        self.assertEqual(n, "http://example.org/name")
+        self.assertEqual(len(n), 23)
+        self.assertIsNone(n.datatype())
+        self.assertIsNone(n.language())
+        self.assertEqual(n.flags(), 0)
+
+    def testFileUri(self):
+        base = serd.Node.uri("http://example.org/")
+        n = serd.Node.file_uri("/foo/bar", "host")
+        self.assertEqual(n.type(), serd.NodeType.URI)
+        self.assertEqual(n, "file://host/foo/bar")
+        self.assertEqual(len(n), 19)
+        self.assertIsNone(n.datatype())
+        self.assertIsNone(n.language())
+        self.assertEqual(n.flags(), 0)
+
+    def testRelativeUri(self):
+        base = serd.Node.uri("http://example.org/")
+        n = serd.Node.file_uri("/foo/bar", "host")
+        self.assertEqual(n.type(), serd.NodeType.URI)
+        self.assertEqual(n, "file://host/foo/bar")
+        self.assertEqual(len(n), 19)
+        self.assertIsNone(n.datatype())
+        self.assertIsNone(n.language())
+        self.assertEqual(n.flags(), 0)
+
+    def testDecimal(self):
+        xsd_decimal = "http://www.w3.org/2001/XMLSchema#decimal"
+        n = serd.Node.decimal(12.34, 7, 4, None)
+        self.assertEqual(n.type(), serd.NodeType.LITERAL)
+        self.assertEqual(str(n), "12.34")
+        self.assertEqual(len(n), 5)
+        self.assertEqual(n.datatype(), serd.Node.uri(xsd_decimal))
+        self.assertIsNone(n.language())
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
+
     def testDouble(self):
         xsd_double = "http://www.w3.org/2001/XMLSchema#double"
         n = serd.Node.double(12.34)
@@ -84,7 +124,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 7)
         self.assertEqual(n.datatype(), serd.Node.uri(xsd_double))
         self.assertIsNone(n.language())
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
 
     def testFloat(self):
         xsd_float = "http://www.w3.org/2001/XMLSchema#float"
@@ -94,7 +134,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 7)
         self.assertEqual(n.datatype(), serd.Node.uri(xsd_float))
         self.assertIsNone(n.language())
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
 
     def testInteger(self):
         xsd_integer = "http://www.w3.org/2001/XMLSchema#integer"
@@ -104,7 +144,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 2)
         self.assertEqual(n.datatype(), serd.Node.uri(xsd_integer))
         self.assertIsNone(n.language())
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
 
         xsd_decimal = "http://www.w3.org/2001/XMLSchema#decimal"
         d = serd.Node.integer(53, serd.Node.uri(xsd_decimal))
@@ -112,14 +152,13 @@ class NodeTests(unittest.TestCase):
 
     def testBoolean(self):
         xsd_boolean = "http://www.w3.org/2001/XMLSchema#boolean"
-
         t = serd.Node.boolean(True)
         self.assertEqual(t.type(), serd.NodeType.LITERAL)
         self.assertEqual(str(t), "true")
         self.assertEqual(len(t), 4)
         self.assertEqual(t.datatype(), serd.Node.uri(xsd_boolean))
         self.assertIsNone(t.language())
-        self.assertEqual(t.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(t.flags(), serd.NodeFlags.HAS_DATATYPE)
 
         f = serd.Node.boolean(False)
         self.assertEqual(f.type(), serd.NodeType.LITERAL)
@@ -127,7 +166,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(f), 5)
         self.assertEqual(f.datatype(), serd.Node.uri(xsd_boolean))
         self.assertIsNone(f.language())
-        self.assertEqual(f.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(f.flags(), serd.NodeFlags.HAS_DATATYPE)
 
     def testBlob(self):
         xsd_base64Binary = "http://www.w3.org/2001/XMLSchema#base64Binary"
@@ -137,7 +176,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(n), 8)
         self.assertEqual(n.datatype(), serd.Node.uri(xsd_base64Binary))
         self.assertIsNone(n.language())
-        self.assertEqual(n.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(n.flags(), serd.NodeFlags.HAS_DATATYPE)
 
         datatype = "http://example.org/ns#Blob"
         t = serd.Node.blob(b"BEEF", datatype=serd.Node.uri(datatype))
@@ -146,4 +185,4 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(t), 8)
         self.assertEqual(t.datatype(), serd.Node.uri(datatype))
         self.assertIsNone(t.language())
-        self.assertEqual(t.flags(), serd.NodeFlag.HAS_DATATYPE)
+        self.assertEqual(t.flags(), serd.NodeFlags.HAS_DATATYPE)

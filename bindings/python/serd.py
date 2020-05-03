@@ -2,7 +2,7 @@
 
 import sys
 
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 
 from ctypes import Structure, CDLL, POINTER
 from ctypes import c_bool, c_double, c_float, c_int, c_uint
@@ -51,7 +51,7 @@ class Syntax(IntEnum):
     TRIG = 4  # Terse quads http://www.w3.org/TR/trig/
 
 
-class StatementFlag(IntEnum):
+class StatementFlags(IntFlag):
     EMPTY_S = 1 << 0  # Empty blank node subject
     ANON_S = 1 << 1  # Start of anonymous subject
     ANON_O = 1 << 2  # Start of anonymous object
@@ -61,7 +61,7 @@ class StatementFlag(IntEnum):
     TERSE_O = 1 << 6  # Terse serialisation of new object
 
 
-class SerialisationFlag(IntEnum):
+class SerialisationFlags(IntFlag):
     NO_INLINE_OBJECTS = 1 << 0  # Disable object inlining
 
 
@@ -73,7 +73,7 @@ class NodeType(IntEnum):
     VARIABLE = 5  # Variable node
 
 
-class NodeFlag(IntEnum):
+class NodeFlags(IntFlag):
     HAS_NEWLINE = 1  # Contains line breaks ('\\n' or '\\r')
     HAS_QUOTE = 1 << 1  # Contains quotes ('"')
     HAS_DATATYPE = 1 << 2  # Literal node has datatype
@@ -87,7 +87,7 @@ class Field(IntEnum):
     GRAPH = 3  # Graph ("context")
 
 
-class ModelFlag(IntEnum):
+class ModelFlags(IntFlag):
     INDEX_SPO = 1 << 0  # Subject,   Predicate, Object
     INDEX_SOP = 1 << 1  # Subject,   Object,    Predicate
     INDEX_OPS = 1 << 2  # Object,    Predicate, Subject
@@ -101,12 +101,12 @@ class ModelFlag(IntEnum):
 # TODO: URI
 
 
-class ReaderFlag(IntEnum):
+class ReaderFlags(IntFlag):
     READ_LAX = 1 << 0  # Tolerate invalid input where possible
     READ_VARIABLES = 1 << 1  # Support variable nodes
 
 
-class WriterFlag(IntEnum):
+class WriterFlags(IntFlag):
     WRITE_ASCII = 1 << 0  # Escape all non-ASCII characters
     WRITE_TERSE = 1 << 1  # Write terser output without newlines
     WRITE_LAX = 1 << 2  # Tolerate lossy output
@@ -296,19 +296,10 @@ _cfunc("new_plain_literal", P(Node), String, String)
 _cfunc("new_typed_literal", P(Node), String, P(Node))
 _cfunc("new_blank", P(Node), String)
 _cfunc("new_curie", P(Node), String)
-
-# TODO: Fix order in serd.h
-_cfunc("node_copy", P(Node), P(Node))
-_cfunc("node_equals", c_bool, P(Node), P(Node))
-_cfunc("node_compare", c_int, P(Node), P(Node))
-
 _cfunc("new_uri", P(Node), String)
 _cfunc("new_resolved_uri", P(Node), String, P(Node))
 # _cfunc("node_normalise", P(Node), P(Env), P(Node))
-
-# TODO: Fix order in serd.h
 _cfunc("node_resolve", P(Node), P(Node))
-
 _cfunc("new_file_uri", P(Node), String, String)
 _cfunc("new_relative_uri", P(Node), String, P(Node), P(Node))
 _cfunc("new_decimal", P(Node), c_double, c_uint, c_uint, P(Node))
@@ -317,12 +308,12 @@ _cfunc("new_float", P(Node), c_float)
 _cfunc("new_integer", P(Node), c_int64, P(Node))
 _cfunc("new_boolean", P(Node), c_bool)
 _cfunc("new_blob", P(Node), c_void_p, c_size_t, c_bool, P(Node))
-
-NodeFlags = c_int
-
+_cfunc("node_copy", P(Node), P(Node))
 _cfunc("node_get_type", NodeType, P(Node))
 _cfunc("node_get_string", c_char_p, P(Node))
 _cfunc("node_get_length", c_size_t, P(Node))
+_cfunc("node_get_flags", NodeFlags, P(Node))
 _cfunc("node_get_datatype", P(Node), P(Node))
 _cfunc("node_get_language", P(Node), P(Node))
-_cfunc("node_get_flags", NodeFlags, P(Node))
+_cfunc("node_equals", c_bool, P(Node), P(Node))
+_cfunc("node_compare", c_int, P(Node), P(Node))
