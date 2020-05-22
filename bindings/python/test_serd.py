@@ -15,12 +15,30 @@
 import serd
 import unittest
 import base64
+import math
 
+
+class StringTests(unittest.TestCase):
+    def testStrerror(self):
+        self.assertEqual(serd.strerror(serd.Status.SUCCESS), "Success")
+        self.assertEqual(
+            serd.strerror(serd.Status.ERR_BAD_WRITE), "Error writing to file"
+        )
+
+    def testStrtod(self):
+        self.assertEqual(serd.strtod("42"), 42.0)
+        self.assertEqual(serd.strtod("1.234 hello"), 1.234)
+        self.assertTrue(math.isnan(serd.strtod("not a number")))
+
+class Base64Tests(unittest.TestCase):
+    def testBase64(self):
+        data = "foobar".encode('utf-8')
+        encoded = "Zm9vYmFy"
+
+        self.assertEqual(serd.base64_encode(data), encoded)
+        self.assertEqual(serd.base64_decode(encoded), data)
 
 class NodeTests(unittest.TestCase):
-    def setUp(self):
-        self.world = serd.World()
-
     def testString(self):
         n = serd.Node.string("hello")
         self.assertEqual(n.type(), serd.NodeType.LITERAL)
@@ -186,3 +204,91 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(t.datatype(), serd.Node.uri(datatype))
         self.assertIsNone(t.language())
         self.assertEqual(t.flags(), serd.NodeFlags.HAS_DATATYPE)
+
+    def testComparison(self):
+        a = serd.Node.string("Aardvark")
+        b = serd.Node.string("Banana")
+
+        self.assertEqual(a, a)
+        self.assertNotEqual(a, b)
+        self.assertLess(a, b)
+        self.assertLessEqual(a, b)
+        self.assertLessEqual(a, a)
+        self.assertGreater(b, a)
+        self.assertGreaterEqual(b, a)
+        self.assertGreaterEqual(b, b)
+
+        self.assertLess(None, a)
+        self.assertLessEqual(None, a)
+        self.assertGreater(a, None)
+        self.assertGreaterEqual(a, None)
+
+    # def get_base_uri(self):
+    #     return Node.wrap(c.node_copy(c.env_get_base_uri(self.env)))
+
+    # def set_base_uri(self, uri):
+    #     return Status(c.env_set_base_uri(self.env, uri.node))
+
+    # def set_prefix(self, name, uri):
+    #     return Status(c.env_set_prefix(self.env, name.node, uri.node))
+
+    # def qualify(self, node):
+    #     return Node.wrap(c.env_qualify(self.env, node.node))
+
+    # def expand(self, node):
+    #     return Node.wrap(c.env_expand(self.env, node.node))
+
+
+class Env(unittest.TestCase):
+    def setUp(self):
+        self.world = serd.World()
+
+    def testEquality(self):
+        uri = serd.Node.uri("http://example.org/")
+        env1 = serd.Env()
+        env2 = serd.Env()
+        self.assertEqual(env1, env2)
+
+        env2.set_base_uri(uri)
+        self.assertNotEqual(env1, env2)
+
+        env2.set_base_uri(None)
+        self.assertEqual(env1, env2)
+
+        env2.set_prefix("eg", uri)
+        self.assertNotEqual(env1, env2)
+
+    def testBaseUri(self):
+        env = serd.Env()
+        self.assertIsNone(env.base_uri())
+
+        base = serd.Node.uri("http://example.org/")
+        env.set_base_uri(base)
+        self.assertEqual(env.base_uri(), base)
+
+    def testInitialBaseUri(self):
+        base = serd.Node.uri("http://example.org/")
+        env = serd.Env(base)
+        self.assertEqual(env.base_uri(), base)
+
+    def testQualify(self):
+        base = serd.Node.uri("http://example.org/")
+        uri = serd.Node.uri("http://example.org/name")
+        env = serd.Env(base)
+
+        self.assertIsNone(env.qualify(uri))
+
+        env.set_prefix("eg", base)
+        self.assertEqual(env.qualify(uri), "eg:name")
+
+    def testExpand(self):
+        base = serd.Node.uri("http://example.org/")
+        curie = serd.Node.curie("eg:name")
+        env = serd.Env(base)
+
+        self.assertIsNone(env.expand(curie))
+
+        env.set_prefix("eg", base)
+        self.assertEqual(
+            env.expand(curie), serd.Node.uri("http://example.org/name")
+        )
