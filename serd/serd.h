@@ -918,7 +918,7 @@ void
 serd_world_free(SerdWorld* world);
 
 /**
-   Return the nodes cache in `world`
+   Return the nodes cached in `world`
 
    The returned cache is owned by the world and contains various nodes used
    frequently by the implementation.  For convenience, it may be used to store
