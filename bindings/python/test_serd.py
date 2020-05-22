@@ -30,13 +30,15 @@ class StringTests(unittest.TestCase):
         self.assertEqual(serd.strtod("1.234 hello"), 1.234)
         self.assertTrue(math.isnan(serd.strtod("not a number")))
 
+
 class Base64Tests(unittest.TestCase):
     def testBase64(self):
-        data = "foobar".encode('utf-8')
+        data = "foobar".encode("utf-8")
         encoded = "Zm9vYmFy"
 
         self.assertEqual(serd.base64_encode(data), encoded)
         self.assertEqual(serd.base64_decode(encoded), data)
+
 
 class NodeTests(unittest.TestCase):
     def testString(self):
@@ -218,31 +220,8 @@ class NodeTests(unittest.TestCase):
         self.assertGreaterEqual(b, a)
         self.assertGreaterEqual(b, b)
 
-        self.assertLess(None, a)
-        self.assertLessEqual(None, a)
-        self.assertGreater(a, None)
-        self.assertGreaterEqual(a, None)
-
-    # def get_base_uri(self):
-    #     return Node.wrap(c.node_copy(c.env_get_base_uri(self.env)))
-
-    # def set_base_uri(self, uri):
-    #     return Status(c.env_set_base_uri(self.env, uri.node))
-
-    # def set_prefix(self, name, uri):
-    #     return Status(c.env_set_prefix(self.env, name.node, uri.node))
-
-    # def qualify(self, node):
-    #     return Node.wrap(c.env_qualify(self.env, node.node))
-
-    # def expand(self, node):
-    #     return Node.wrap(c.env_expand(self.env, node.node))
-
 
 class Env(unittest.TestCase):
-    def setUp(self):
-        self.world = serd.World()
-
     def testEquality(self):
         uri = serd.Node.uri("http://example.org/")
         env1 = serd.Env()
@@ -257,6 +236,9 @@ class Env(unittest.TestCase):
 
         env2.set_prefix("eg", uri)
         self.assertNotEqual(env1, env2)
+
+        env1.set_prefix(serd.Node.string("eg"), uri)
+        self.assertEqual(env1, env2)
 
     def testBaseUri(self):
         env = serd.Env()
@@ -291,4 +273,261 @@ class Env(unittest.TestCase):
         env.set_prefix("eg", base)
         self.assertEqual(
             env.expand(curie), serd.Node.uri("http://example.org/name")
+        )
+
+
+class ModelTests(unittest.TestCase):
+    def setUp(self):
+        self.world = serd.World()
+        self.s = serd.Node.uri("http://example.org/s")
+        self.p = serd.Node.uri("http://example.org/p")
+        self.o = serd.Node.uri("http://example.org/o")
+        self.g = serd.Node.uri("http://example.org/g")
+
+    def testConstruction(self):
+        flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
+        model = serd.Model(self.world, flags)
+        self.assertEqual(model.flags(), flags)
+        self.assertNotEqual(model.flags(), serd.ModelFlags.INDEX_SPO)
+        self.assertEqual(model.world(), self.world)
+
+    def testInsertErase(self):
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        model.insert(self.s, self.p, self.o)
+        self.assertEqual(len(model), 1)
+        model.erase(iter(model))
+        self.assertEqual(len(model), 0)
+
+        statement = serd.Statement(self.s, self.p, self.o)
+        model += statement
+        self.assertEqual(len(model), 1)
+        del model[statement]
+        self.assertEqual(len(model), 0)
+
+    def testSize(self):
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+        self.assertEqual(model.size(), 0)
+        self.assertEqual(len(model), 0)
+        self.assertTrue(model.empty())
+
+        model.insert(self.s, self.p, self.o)
+        self.assertEqual(model.size(), 1)
+        self.assertEqual(len(model), 1)
+        self.assertFalse(model.empty())
+
+        model.erase(iter(model))
+        self.assertEqual(model.size(), 0)
+        self.assertEqual(len(model), 0)
+        self.assertTrue(model.empty())
+
+    def testBeginEnd(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        self.assertEqual(model.begin(), model.end())
+
+        model.insert(s, p, o, g)
+        self.assertNotEqual(model.begin(), model.end())
+
+    def testFind(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        x = serd.Node.uri("http://example.org/x")
+        flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
+        model = serd.Model(self.world, flags)
+        in_statement = serd.Statement(s, p, o, g)
+        out_statement = serd.Statement(x, p, o, g)
+
+        model += in_statement
+        self.assertEqual(model.find(out_statement), model.end())
+        self.assertNotEqual(model.find(in_statement), model.end())
+
+    def testGet(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        x = serd.Node.uri("http://example.org/x")
+        flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
+        model = serd.Model(self.world, flags)
+
+        model.insert(s, p, o, g)
+        self.assertEqual(model.get(None, p, o, g), s)
+        self.assertEqual(model.get(s, None, o, g), p)
+        self.assertEqual(model.get(s, p, None, g), o)
+        self.assertEqual(model.get(s, p, o, None), g)
+
+    def testAsk(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        x = serd.Node.uri("http://example.org/x")
+        flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
+        model = serd.Model(self.world, flags)
+        model.insert(s, p, o, g)
+
+        self.assertTrue(model.ask(s, p, o, g))
+        self.assertIn(serd.Statement(s, p, o, g), model)
+        self.assertIn((s, p, o, g), model)
+
+        self.assertFalse(model.ask(x, p, o, g))
+        self.assertNotIn(serd.Statement(x, p, o, g), model)
+        self.assertNotIn((x, p, o, g), model)
+
+
+class StatementTests(unittest.TestCase):
+    def setUp(self):
+        self.s = serd.Node.uri("http://example.org/s")
+        self.p = serd.Node.uri("http://example.org/p")
+        self.o = serd.Node.uri("http://example.org/o")
+        self.g = serd.Node.uri("http://example.org/g")
+        self.cursor = serd.Cursor("foo.ttl", 1, 0)
+
+    def testAllFields(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        statement = serd.Statement(s, p, o, g, self.cursor)
+
+        self.assertEqual(statement.node(serd.Field.SUBJECT), s)
+        self.assertEqual(statement.node(serd.Field.PREDICATE), p)
+        self.assertEqual(statement.node(serd.Field.OBJECT), o)
+        self.assertEqual(statement.node(serd.Field.GRAPH), g)
+
+        self.assertEqual(statement.subject(), s)
+        self.assertEqual(statement.predicate(), p)
+        self.assertEqual(statement.object(), o)
+        self.assertEqual(statement.graph(), g)
+
+        self.assertEqual(statement.cursor(), self.cursor)
+
+    def testNoGraph(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        statement = serd.Statement(s, p, o, None, self.cursor)
+
+        self.assertEqual(statement.node(serd.Field.SUBJECT), s)
+        self.assertEqual(statement.node(serd.Field.PREDICATE), p)
+        self.assertEqual(statement.node(serd.Field.OBJECT), o)
+        self.assertIsNone(statement.node(serd.Field.GRAPH))
+
+        self.assertEqual(statement.subject(), s)
+        self.assertEqual(statement.predicate(), p)
+        self.assertEqual(statement.object(), o)
+        self.assertIsNone(statement.graph())
+
+        self.assertEqual(statement.cursor(), self.cursor)
+
+    def testNoCursor(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        statement = serd.Statement(s, p, o, g)
+
+        self.assertEqual(statement.node(serd.Field.SUBJECT), s)
+        self.assertEqual(statement.node(serd.Field.PREDICATE), p)
+        self.assertEqual(statement.node(serd.Field.OBJECT), o)
+        self.assertEqual(statement.node(serd.Field.GRAPH), g)
+
+        self.assertEqual(statement.subject(), s)
+        self.assertEqual(statement.predicate(), p)
+        self.assertEqual(statement.object(), o)
+        self.assertEqual(statement.graph(), g)
+
+        self.assertIsNone(statement.cursor())
+
+    def testNoGraphOrCursor(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        statement = serd.Statement(s, p, o)
+
+        self.assertEqual(statement.node(serd.Field.SUBJECT), s)
+        self.assertEqual(statement.node(serd.Field.PREDICATE), p)
+        self.assertEqual(statement.node(serd.Field.OBJECT), o)
+        self.assertIsNone(statement.node(serd.Field.GRAPH))
+
+        self.assertEqual(statement.subject(), s)
+        self.assertEqual(statement.predicate(), p)
+        self.assertEqual(statement.object(), o)
+        self.assertIsNone(statement.graph())
+
+        self.assertIsNone(statement.cursor())
+
+    def testComparison(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        statement1 = serd.Statement(s, p, o, g)
+        statement2 = serd.Statement(o, p, s, g)
+
+        self.assertEqual(statement1, statement1)
+        self.assertNotEqual(statement1, statement2)
+
+    def testMatches(self):
+        s, p, o, g = self.s, self.p, self.o, self.g
+        x = serd.Node.uri("http://example.org/x")
+        statement = serd.Statement(s, p, o, g)
+
+        self.assertTrue(statement.matches(s, p, o, g))
+        self.assertTrue(statement.matches(None, p, o, g))
+        self.assertTrue(statement.matches(s, None, o, g))
+        self.assertTrue(statement.matches(s, p, None, g))
+        self.assertTrue(statement.matches(s, p, o, None))
+
+        self.assertFalse(statement.matches(x, p, o, g))
+        self.assertFalse(statement.matches(s, x, o, g))
+        self.assertFalse(statement.matches(s, p, x, g))
+        self.assertFalse(statement.matches(s, p, o, x))
+
+
+class RangeTests(unittest.TestCase):
+    def setUp(self):
+        self.world = serd.World()
+        self.s = serd.Node.uri("http://example.org/s")
+        self.p = serd.Node.uri("http://example.org/p")
+        self.o1 = serd.Node.uri("http://example.org/o1")
+        self.o2 = serd.Node.uri("http://example.org/o2")
+        self.g = serd.Node.uri("http://example.org/g")
+
+    def testFront(self):
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        model.insert(self.s, self.p, self.o1)
+        self.assertEqual(model.all().front(), serd.Statement(self.s, self.p, self.o1))
+
+    def testEmpty(self):
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        self.assertTrue(model.all().empty())
+
+        model.insert(self.s, self.p, self.o1)
+        self.assertFalse(model.all().empty())
+
+    def testIteration(self):
+        model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        model.insert(self.s, self.p, self.o1)
+        model.insert(self.s, self.p, self.o2)
+
+        i = iter(model.all())
+        self.assertEqual(next(i), serd.Statement(self.s, self.p, self.o1))
+        self.assertEqual(next(i), serd.Statement(self.s, self.p, self.o2))
+
+        with self.assertRaises(StopIteration):
+            next(i)
+
+
+class CursorTests(unittest.TestCase):
+    def testStringConstruction(self):
+        cur = serd.Cursor("foo.ttl", 3, 4)
+        self.assertEqual(cur.name(), "foo.ttl")
+        self.assertEqual(cur.line(), 3)
+        self.assertEqual(cur.column(), 4)
+
+    def testNodeConstruction(self):
+        name = serd.Node.string("foo.ttl")
+        cur = serd.Cursor(name, 5, 6)
+        self.assertEqual(cur.name(), name)
+        self.assertEqual(cur.line(), 5)
+        self.assertEqual(cur.column(), 6)
+
+    def testComparison(self):
+        self.assertEqual(
+            serd.Cursor("foo.ttl", 1, 2), serd.Cursor("foo.ttl", 1, 2)
+        )
+        self.assertNotEqual(
+            serd.Cursor("foo.ttl", 9, 2), serd.Cursor("foo.ttl", 1, 2)
+        )
+        self.assertNotEqual(
+            serd.Cursor("foo.ttl", 1, 9), serd.Cursor("foo.ttl", 1, 2)
+        )
+        self.assertNotEqual(
+            serd.Cursor("bar.ttl", 1, 2), serd.Cursor("foo.ttl", 1, 2)
         )

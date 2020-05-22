@@ -175,6 +175,7 @@ class Node(Structure):
 
     @classmethod
     def wrap(cls, node):
+        assert node is None or type(node) == P(Node)
         return Node.manage(c.node_copy(node))
 
     @classmethod
@@ -229,7 +230,9 @@ class Node(Structure):
 
     @classmethod
     def integer(cls, i, datatype=None):
-        return Node.manage(c.new_integer(i, datatype.node if datatype else None))
+        return Node.manage(
+            c.new_integer(i, datatype.node if datatype else None)
+        )
 
     @classmethod
     def boolean(cls, b):
@@ -256,7 +259,7 @@ class Node(Structure):
         else:
             raise TypeError("Bad argument type for Node(): %s" % type(arg))
 
-    def __del(self):
+    def __del__(self):
         c.node_free(self.node)
         self.node = None
 
@@ -313,7 +316,7 @@ class Env(Structure):
         else:
             raise TypeError("Bad argument type for Env(): %s" % type(arg))
 
-    def __del(self):
+    def __del__(self):
         c.env_free(self.env)
         self.env = None
 
@@ -338,11 +341,167 @@ class Env(Structure):
         return Node.manage(c.env_expand(self.env, node.node))
 
 
+class Model(Structure):
+    @classmethod
+    def manage(cls, cobj):
+        assert cobj is None or type(cobj) == P(Model)
+        return Model(cobj=cobj) if cobj else None
+
+    def __init__(self, world, flags=None, model=None, cobj=None):
+        assert type(world) == World
+
+        self._world = world
+
+        if type(cobj) == POINTER(Model):
+            assert c.model_get_world(cobj) == world.world
+            self.cobj = cobj
+        elif type(model) == Model:
+            assert c.model_get_world(model).world == world.world
+            self.cobj = c.model_copy(arg.model)
+        elif flags is not None:
+            self.cobj = c.model_new(world.world, flags)
+        else:
+            raise TypeError("Bad arguments for Model()")
+
+    def __del__(self):
+        c.model_free(self.cobj)
+        self.model = None
+
+    def __len__(self):
+        return self.size()
+
+    def __iter__(self):
+        return Iter.manage(c.model_begin(self.cobj))
+
+    def __contains__(self, statement):
+        return self.find(statement) != self.end()
+
+    def __delitem__(self, statement):
+        i = self.find(statement)
+        if i is not None:
+            return self.erase(i)
+
+    def __add__(self, statement):
+        status = c.model_insert(self.cobj, Statement.from_param(statement).cobj)
+        if status != Status.SUCCESS:
+            raise RuntimeError("Failed to insert statement")
+
+        return self
+
+    def flags(self):
+        return ModelFlags(c.model_get_flags(self.cobj))
+
+    def size(self):
+        return c.model_size(self.cobj)
+
+    def empty(self):
+        return c.model_empty(self.cobj)
+
+    def insert(self, statement):
+        return Status(self.cobj, statement.cobj)
+
+    def insert(self, s, p, o, g=None):
+        statement = Statement(s, p, o, g)
+        return Status(c.model_insert(self.cobj, statement.cobj))
+
+    def erase(self, iter):
+        return Status(c.model_erase(self.cobj, iter.cobj))
+
+    def begin(self):
+        return Iter.manage(c.model_begin(self.cobj))
+
+    def end(self):
+        return Iter.wrap(c.model_end(self.cobj))
+
+    def all(self):
+        return Range.wrap(c.model_all(self.cobj))
+
+    def find(self, statement):
+        statement = Statement.from_param(statement)
+        s = statement.subject()
+        p = statement.predicate()
+        o = statement.object()
+        g = statement.graph()
+
+        c_iter = c.model_find(
+            self.cobj,
+            s.node if s is not None else None,
+            p.node if p is not None else None,
+            o.node if o is not None else None,
+            g.node if g is not None else None,
+        )
+
+        return Iter.manage(c_iter) if c_iter else self.end()
+
+    def range(self, statement):
+        statement = Statement.from_param(statement)
+        s = statement.subject()
+        p = statement.predicate()
+        o = statement.object()
+        g = statement.graph()
+
+        return Range.manage(c.model_range(
+            self.cobj,
+            s.node if s is not None else None,
+            p.node if p is not None else None,
+            o.node if o is not None else None,
+            g.node if g is not None else None,
+        ))
+
+    def get(self, subject=None, predicate=None, object=None, graph=None):
+        return Node.wrap(
+            c.model_get(
+                self.cobj,
+                subject.node if subject is not None else None,
+                predicate.node if predicate is not None else None,
+                object.node if object is not None else None,
+                graph.node if graph is not None else None,
+            )
+        )
+
+    def ask(self, s, p, o, g=None):
+        return c.model_ask(
+            self.cobj,
+            s.node if s is not None else None,
+            p.node if p is not None else None,
+            o.node if o is not None else None,
+            g.node if g is not None else None,
+        )
+
+    def world(self):
+        return self._world
+
+
 class Statement(Structure):
     @classmethod
     def manage(cls, statement):
         assert statement is None or type(statement) == P(Statement)
         return Statement(ptr=statement) if statement else None
+
+    @classmethod
+    def wrap(cls, cobj):
+        return Statement.manage(c.statement_copy(cobj))
+
+    @classmethod
+    def from_param(cls, obj):
+        if type(obj) == Statement:
+            return obj
+
+        if type(obj) == tuple:
+            if len(obj) != 3 and len(obj) != 4:
+                raise ValueError("Bad number of statement fields")
+
+            for i in range(3):
+                if type(obj[i]) != Node:
+                    raise TypeError("Bad type for statement field " + i)
+
+            if obj[3] is not None and type(obj[3]) != Node:
+                raise TypeError("Bad type for statement field " + i)
+
+            g = obj[3] if obj[3] is not None else None
+            return Statement(obj[0], obj[1], obj[2], g)
+
+        raise TypeError("Bad argument type for Statement: %s" % type(obj))
 
     def __init__(
         self,
@@ -354,30 +513,36 @@ class Statement(Structure):
         ptr=None,
     ):
         if ptr and type(ptr) == POINTER(Statement):
-            self.statement = arg
-        elif not (subject and predicate and object):
+            self.cobj = ptr
+        elif subject and predicate and object:
+            self.cobj = c.statement_new(
+                subject.node,
+                predicate.node,
+                object.node,
+                graph.node if graph else None,
+                cursor.cursor if cursor else None,
+            )
+        else:
             raise TypeError("Missing field for Statement()")
 
-        self.statement = c.statement_new(
-            subject.node,
-            predicate.node,
-            object.node,
-            graph.node if graph else None,
-            cursor.cursor if cursor else None,
-        )
-
     def __del__(self):
-        c.statement_free(self.statement)
-        self.statement = None
+        c.statement_free(self.cobj)
+        self.cobj = None
 
     def __eq__(self, rhs):
         return type(rhs) == Statement and c.statement_equals(
-            self.statement, rhs.statement
+            self.cobj, rhs.cobj
         )
+
+    def __str__(self):
+        return ' '.join([str(self.subject()),
+                         str(self.predicate()),
+                         str(self.object()),
+                         str(self.graph())])
 
     def matches(self, s, p, o, g=None):
         return c.statement_matches(
-            self.statement,
+            self.cobj,
             s.node if s is not None else None,
             p.node if p is not None else None,
             o.node if o is not None else None,
@@ -385,22 +550,104 @@ class Statement(Structure):
         )
 
     def node(self, field):
-        return Node.wrap(c.statement_get_node(self.statement, field))
+        return Node.wrap(c.statement_get_node(self.cobj, field))
 
     def subject(self):
-        return Node.wrap(c.statement_get_subject(self.statement))
+        return Node.wrap(c.statement_get_subject(self.cobj))
 
     def predicate(self):
-        return Node.wrap(c.statement_get_predicate(self.statement))
+        return Node.wrap(c.statement_get_predicate(self.cobj))
 
     def object(self):
-        return Node.wrap(c.statement_get_object(self.statement))
+        return Node.wrap(c.statement_get_object(self.cobj))
 
     def graph(self):
-        return Node.wrap(c.statement_get_graph(self.statement))
+        return Node.wrap(c.statement_get_graph(self.cobj))
 
     def cursor(self):
-        return Cursor.wrap(c.statement_get_cursor(self.statement))
+        return Cursor.wrap(c.statement_get_cursor(self.cobj))
+
+
+class Iter(Structure):
+    @classmethod
+    def manage(cls, cobj):
+        assert iter is None or type(cobj) == P(Iter)
+        return Iter(cobj) if cobj else None
+
+    @classmethod
+    def wrap(cls, cobj):
+        return Iter.manage(c.iter_copy(cobj))
+
+    def __init__(self, arg):
+        self._is_end = False
+        if type(arg) == P(Iter):
+            self.cobj = arg
+        elif type(arg) == Iter:
+            self.cobj = c.iter_copy(arg.cobj)
+        else:
+            raise TypeError("Bad argument type for Iter(): %s" % type(arg))
+
+    def __del__(self):
+        c.iter_free(self.cobj)
+        self.cobj = None
+
+    def __eq__(self, rhs):
+        return type(rhs) == Iter and c.iter_equals(self.cobj, rhs.cobj)
+
+    def __next__(self):
+        """Move to and return the next item."""
+        if self._is_end:
+            raise StopIteration
+
+        item = c.iter_get(self.cobj)
+        self._is_end = c.iter_next(self.cobj)
+
+        return Statement.wrap(item)
+
+    def get(self):
+        """Get the current item."""
+        return Statement.wrap(c.iter_get(self.cobj))
+
+
+class Range(Structure):
+    @classmethod
+    def manage(cls, cobj):
+        assert range is None or type(cobj) == P(Range)
+        return Range(cobj) if cobj else None
+
+    @classmethod
+    def wrap(cls, cobj):
+        return Range.manage(c.range_copy(cobj))
+
+    def __init__(self, arg):
+        if type(arg) == P(Range):
+            self.cobj = arg
+        elif type(arg) == Range:
+            self.cobj = c.range_copy(arg.cobj)
+        else:
+            raise TypeError("Bad argument type for Range(): %s" % type(arg))
+
+    def __del__(self):
+        c.range_free(self.cobj)
+        self.cobj = None
+
+    def __eq__(self, rhs):
+        return type(rhs) == Range and c.range_equals(self.cobj, rhs.cobj)
+
+    def __iter__(self):
+        return Iter.wrap(c.range_begin(self.cobj))
+
+    def front(self):
+        return Statement.wrap(c.range_front(self.cobj))
+
+    def empty(self):
+        return c.range_empty(self.cobj)
+
+    def begin(self):
+        return Iter.wrap(c.range_begin(self.cobj))
+
+    def end(self):
+        return Iter.wrap(c.range_end(self.cobj))
 
 
 class Cursor(Structure):
@@ -417,9 +664,11 @@ class Cursor(Structure):
         if type(arg) == POINTER(Cursor):
             self.cursor = arg
         elif type(arg) == Node:
-            self.cursor = c.cursor_new(arg.node, line, col)
+            self.name_node = arg
+            self.cursor = c.cursor_new(self.name_node.node, line, col)
         elif type(arg) == str:
-            self.cursor = c.cursor_new(Node.string(arg).node, line, col)
+            self.name_node = Node.string(arg)
+            self.cursor = c.cursor_new(self.name_node.node, line, col)
         else:
             raise TypeError("Bad argument type for Cursor(): %s" % type(arg))
 
@@ -441,6 +690,7 @@ class Cursor(Structure):
 
 
 # Set up C bindings
+
 
 class String(str):
     # Wrapper for string parameters to pass as raw C UTF-8 strings
@@ -513,6 +763,7 @@ _cfunc("node_get_datatype", P(Node), P(Node))
 _cfunc("node_get_language", P(Node), P(Node))
 _cfunc("node_equals", c_bool, P(Node), P(Node))
 _cfunc("node_compare", c_int, P(Node), P(Node))
+_cfunc("node_free", None, P(Node))
 
 # Env
 _cfunc("env_new", P(Env), P(Node))
@@ -526,6 +777,42 @@ _cfunc("env_set_prefix", Status, P(Env), P(Node), P(Node))
 _cfunc("env_qualify", P(Node), P(Env), P(Node))
 _cfunc("env_expand", P(Node), P(Env), P(Node))
 # _cfunc("env_write_prefixes", None, P(Env), P(Sink))
+
+# Model
+
+_cfunc("model_new", P(Model), P(World), c_int)
+_cfunc("model_copy", P(Model), P(Model))
+_cfunc("model_equals", c_bool, P(Model), P(Model))
+_cfunc("model_free", None, P(Model))
+_cfunc("model_get_world", P(World), P(Model))
+_cfunc("model_get_flags", c_int, P(Model))
+_cfunc("model_size", c_size_t, P(Model))
+_cfunc("model_empty", c_bool, P(Model))
+_cfunc("model_begin", P(Iter), P(Model))
+_cfunc("model_end", P(Iter), P(Model))
+_cfunc("model_all", P(Range), P(Model))
+_cfunc("model_find", P(Iter), P(Model), P(Node), P(Node), P(Node), P(Node))
+_cfunc("model_range", P(Range), P(Model), P(Node), P(Node), P(Node), P(Node))
+_cfunc("model_get", P(Node), P(Model), P(Node), P(Node), P(Node), P(Node))
+
+_cfunc(
+    "model_get_statement",
+    P(Statement),
+    P(Model),
+    P(Node),
+    P(Node),
+    P(Node),
+    P(Node),
+)
+
+_cfunc("model_ask", c_bool, P(Model), P(Node), P(Node), P(Node), P(Node))
+_cfunc("model_count", c_size_t, P(Model), P(Node), P(Node), P(Node), P(Node))
+_cfunc("model_add", Status, P(Model), P(Node), P(Node), P(Node), P(Node))
+_cfunc("model_insert", Status, P(Model), P(Statement))
+# _cfunc("model_add_range", Status, P(Model), P(Range))
+_cfunc("model_erase", Status, P(Model), P(Iter))
+# _cfunc("model_erase_range", Status, P(Model), P(Range))
+_cfunc("validate", Status, P(Model))
 
 # Statement
 
@@ -552,6 +839,26 @@ _cfunc(
     P(Node),
     P(Node),
 )
+
+# Iter
+_cfunc("iter_copy", P(Iter), P(Iter))
+_cfunc("iter_get", P(Statement), P(Iter))
+_cfunc("iter_next", c_bool, P(Iter))
+_cfunc("iter_equals", c_bool, P(Iter), P(Iter))
+_cfunc("iter_free", None, P(Iter))
+
+# Range
+_cfunc("range_copy", P(Range), P(Range))
+_cfunc("range_free", None, P(Range))
+_cfunc("range_front", P(Statement), P(Range))
+_cfunc("range_equals", c_bool, P(Range), P(Range))
+_cfunc("range_next", c_bool, P(Range))
+_cfunc("range_empty", c_bool, P(Range))
+_cfunc("range_cbegin", P(Iter), P(Range))
+_cfunc("range_cend", P(Iter), P(Range))
+_cfunc("range_begin", P(Iter), P(Range))
+_cfunc("range_end", P(Iter), P(Range))
+# _cfunc("range_serialise", Status, P(Range), P(Sink), c_uint)
 
 # Cursor
 _cfunc("cursor_new", P(Cursor), P(Node), c_uint, c_uint)
