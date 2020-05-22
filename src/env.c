@@ -112,8 +112,12 @@ SerdStatus
 serd_env_set_base_uri(SerdEnv*        env,
                       const SerdNode* uri)
 {
-	if (!env || !uri || uri->type != SERD_URI) {
+	if (!env || (uri && uri->type != SERD_URI)) {
 		return SERD_ERR_BAD_ARG;
+	} else if (!uri) {
+		serd_node_free(env->base_uri_node);
+		env->base_uri_node = NULL;
+		env->base_uri      = SERD_URI_NULL;
 	}
 
 	// Resolve base URI and create a new node and URI for it
