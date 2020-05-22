@@ -207,6 +207,14 @@ test_read(SerdWorld*      world,
 	assert(serd_node_equals(
 	        serd_model_get(model, NULL, uri(world, 2), uri(world, 3), g),
 	        uri(world, 1)));
+	if (g) {
+		assert(serd_node_equals(serd_model_get(model,
+		                                       uri(world, 1),
+		                                       uri(world, 2),
+		                                       uri(world, 3),
+		                                       NULL),
+		                        g));
+	}
 
 	for (unsigned i = 0; i < NUM_PATTERNS; ++i) {
 		QueryTest test = patterns[i];

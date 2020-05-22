@@ -459,6 +459,8 @@ serd_model_get(const SerdModel* model,
 			return serd_statement_get_predicate(statement);
 		} else if (!o) {
 			return serd_statement_get_object(statement);
+		} else if (!g) {
+			return serd_statement_get_graph(statement);
 		}
 	}
 
@@ -472,7 +474,8 @@ serd_model_get_statement(const SerdModel* model,
                          const SerdNode*  o,
                          const SerdNode*  g)
 {
-	if ((bool)s + (bool)p + (bool)o != 2) {
+	if ((bool)s + (bool)p + (bool)o != 2 &&
+	    (bool)s + (bool)p + (bool)o + (bool)g != 3) {
 		return NULL;
 	}
 
