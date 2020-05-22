@@ -1589,7 +1589,7 @@ serd_model_find(const SerdModel* model,
 /**
    Search for statements by a quad pattern
 
-   @return A range containins all matching statements.
+   @return A range containing all matching statements.
 */
 SERD_API
 SerdRange*
