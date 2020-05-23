@@ -12,10 +12,13 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-import serd
-import unittest
 import base64
 import math
+import os
+import serd
+import tempfile
+import unittest
+import shutil
 
 
 class StringTests(unittest.TestCase):
@@ -23,6 +26,12 @@ class StringTests(unittest.TestCase):
         self.assertEqual(serd.strerror(serd.Status.SUCCESS), "Success")
         self.assertEqual(
             serd.strerror(serd.Status.ERR_BAD_WRITE), "Error writing to file"
+        )
+
+    def testStrlen(self):
+        self.assertEqual(serd.strlen("hello"), (5, 0))
+        self.assertEqual(
+            serd.strlen("new\nline"), (8, serd.NodeFlags.HAS_NEWLINE)
         )
 
     def testStrtod(self):
@@ -38,6 +47,29 @@ class Base64Tests(unittest.TestCase):
 
         self.assertEqual(serd.base64_encode(data), encoded)
         self.assertEqual(serd.base64_decode(encoded), data)
+
+
+class SyntaxTests(unittest.TestCase):
+    def testSyntaxByName(self):
+        self.assertEqual(serd.syntax_by_name("TuRtLe"), serd.Syntax.TURTLE)
+        self.assertEqual(serd.syntax_by_name("wat"), serd.Syntax.EMPTY)
+
+    def testGuessSyntax(self):
+        self.assertEqual(serd.guess_syntax("foo.nq"), serd.Syntax.NQUADS)
+        self.assertEqual(serd.guess_syntax("foo.txt"), serd.Syntax.EMPTY)
+
+    def testSyntaxHasGraphs(self):
+        self.assertTrue(serd.syntax_has_graphs(serd.Syntax.TRIG))
+        self.assertFalse(serd.syntax_has_graphs(serd.Syntax.NTRIPLES))
+
+
+class WorldTests(unittest.TestCase):
+    def setUp(self):
+        self.world = serd.World()
+
+    def testGetBlank(self):
+        self.assertEqual(self.world.get_blank(), serd.Node.blank("b1"))
+        self.assertEqual(self.world.get_blank(), serd.Node.blank("b2"))
 
 
 class NodeTests(unittest.TestCase):
@@ -282,7 +314,10 @@ class ModelTests(unittest.TestCase):
         self.s = serd.Node.uri("http://example.org/s")
         self.p = serd.Node.uri("http://example.org/p")
         self.o = serd.Node.uri("http://example.org/o")
+        self.o1 = serd.Node.uri("http://example.org/o1")
+        self.o2 = serd.Node.uri("http://example.org/o2")
         self.g = serd.Node.uri("http://example.org/g")
+        self.x = serd.Node.uri("http://example.org/x")
 
     def testConstruction(self):
         flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
@@ -294,7 +329,7 @@ class ModelTests(unittest.TestCase):
     def testInsertErase(self):
         model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
 
-        model.insert(self.s, self.p, self.o)
+        model.insert((self.s, self.p, self.o))
         self.assertEqual(len(model), 1)
         model.erase(iter(model))
         self.assertEqual(len(model), 0)
@@ -311,7 +346,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(len(model), 0)
         self.assertTrue(model.empty())
 
-        model.insert(self.s, self.p, self.o)
+        model.insert((self.s, self.p, self.o))
         self.assertEqual(model.size(), 1)
         self.assertEqual(len(model), 1)
         self.assertFalse(model.empty())
@@ -327,12 +362,11 @@ class ModelTests(unittest.TestCase):
 
         self.assertEqual(model.begin(), model.end())
 
-        model.insert(s, p, o, g)
+        model.insert((s, p, o, g))
         self.assertNotEqual(model.begin(), model.end())
 
     def testFind(self):
-        s, p, o, g = self.s, self.p, self.o, self.g
-        x = serd.Node.uri("http://example.org/x")
+        s, p, o, g, x = self.s, self.p, self.o, self.g, self.x
         flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
         model = serd.Model(self.world, flags)
         in_statement = serd.Statement(s, p, o, g)
@@ -343,23 +377,21 @@ class ModelTests(unittest.TestCase):
         self.assertNotEqual(model.find(in_statement), model.end())
 
     def testGet(self):
-        s, p, o, g = self.s, self.p, self.o, self.g
-        x = serd.Node.uri("http://example.org/x")
+        s, p, o, g, x = self.s, self.p, self.o, self.g, self.x
         flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
         model = serd.Model(self.world, flags)
 
-        model.insert(s, p, o, g)
+        model.insert((s, p, o, g))
         self.assertEqual(model.get(None, p, o, g), s)
         self.assertEqual(model.get(s, None, o, g), p)
         self.assertEqual(model.get(s, p, None, g), o)
         self.assertEqual(model.get(s, p, o, None), g)
 
     def testAsk(self):
-        s, p, o, g = self.s, self.p, self.o, self.g
-        x = serd.Node.uri("http://example.org/x")
+        s, p, o, g, x = self.s, self.p, self.o, self.g, self.x
         flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
         model = serd.Model(self.world, flags)
-        model.insert(s, p, o, g)
+        model.insert((s, p, o, g))
 
         self.assertTrue(model.ask(s, p, o, g))
         self.assertIn(serd.Statement(s, p, o, g), model)
@@ -368,6 +400,17 @@ class ModelTests(unittest.TestCase):
         self.assertFalse(model.ask(x, p, o, g))
         self.assertNotIn(serd.Statement(x, p, o, g), model)
         self.assertNotIn((x, p, o, g), model)
+
+    def testCount(self):
+        s, p, o1, o2, g, x = self.s, self.p, self.o1, self.o2, self.g, self.x
+        flags = serd.ModelFlags.INDEX_SPO | serd.ModelFlags.INDEX_GRAPHS
+        model = serd.Model(self.world, flags)
+        model.insert((s, p, o1, g))
+        model.insert((s, p, o2, g))
+
+        self.assertEqual(model.count(s, p, o1, g), 1)
+        self.assertEqual(model.count(s, p, None, g), 2)
+        self.assertEqual(model.count(s, p, x, g), 0)
 
 
 class StatementTests(unittest.TestCase):
@@ -472,6 +515,8 @@ class RangeTests(unittest.TestCase):
         self.world = serd.World()
         self.s = serd.Node.uri("http://example.org/s")
         self.p = serd.Node.uri("http://example.org/p")
+        self.p1 = serd.Node.uri("http://example.org/p1")
+        self.p2 = serd.Node.uri("http://example.org/p2")
         self.o1 = serd.Node.uri("http://example.org/o1")
         self.o2 = serd.Node.uri("http://example.org/o2")
         self.g = serd.Node.uri("http://example.org/g")
@@ -479,29 +524,52 @@ class RangeTests(unittest.TestCase):
     def testFront(self):
         model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
 
-        model.insert(self.s, self.p, self.o1)
-        self.assertEqual(model.all().front(), serd.Statement(self.s, self.p, self.o1))
+        model.insert((self.s, self.p, self.o1))
+        self.assertEqual(
+            model.all().front(), serd.Statement(self.s, self.p, self.o1)
+        )
 
     def testEmpty(self):
         model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
 
         self.assertTrue(model.all().empty())
 
-        model.insert(self.s, self.p, self.o1)
+        model.insert((self.s, self.p, self.o1))
         self.assertFalse(model.all().empty())
 
     def testIteration(self):
         model = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
 
-        model.insert(self.s, self.p, self.o1)
-        model.insert(self.s, self.p, self.o2)
+        model.insert((self.s, self.p, self.o1))
+        model.insert((self.s, self.p, self.o2))
 
         i = iter(model.all())
         self.assertEqual(next(i), serd.Statement(self.s, self.p, self.o1))
         self.assertEqual(next(i), serd.Statement(self.s, self.p, self.o2))
-
         with self.assertRaises(StopIteration):
             next(i)
+
+    def testInsertErase(self):
+        model1 = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+        model2 = serd.Model(self.world, serd.ModelFlags.INDEX_SPO)
+
+        model1.insert((self.s, self.p1, self.o1))
+        model1.insert((self.s, self.p1, self.o2))
+        model1.insert((self.s, self.p2, self.o1))
+        model1.insert((self.s, self.p2, self.o2))
+
+        model2.insert(model1.range((self.s, self.p1, None)))
+
+        self.assertEqual(
+            [s for s in model2],
+            [
+                serd.Statement(self.s, self.p1, self.o1),
+                serd.Statement(self.s, self.p1, self.o2),
+            ],
+        )
+
+        model1.erase(model1.range((self.s, self.p2, None)))
+        self.assertEqual(model1, model2)
 
 
 class CursorTests(unittest.TestCase):
@@ -530,4 +598,70 @@ class CursorTests(unittest.TestCase):
         )
         self.assertNotEqual(
             serd.Cursor("bar.ttl", 1, 2), serd.Cursor("foo.ttl", 1, 2)
+        )
+
+
+class ReaderTests(unittest.TestCase):
+    def setUp(self):
+        self.world = serd.World()
+        self.temp_dir = tempfile.mkdtemp()
+        self.ttl_path = os.path.join(self.temp_dir, "input.ttl")
+        with open(self.ttl_path, "w") as f:
+            f.write(
+                """@prefix eg: <http://example.org/> .
+            @base <http://example.org/base> .
+            eg:s eg:p1 eg:o1 ;
+                 eg:p2 eg:o2 ."""
+            )
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def testSinkRead(self):
+        class TestSink(serd.Sink):
+            def __init__(self):
+                super().__init__()
+                self.events = []
+
+            def on_base(self, uri):
+                self.events += [("base", uri)]
+                return serd.Status.SUCCESS
+
+            def on_prefix(self, name, uri):
+                self.events += [("prefix", name, uri)]
+                return serd.Status.SUCCESS
+
+            def on_statement(self, flags, statement):
+                self.events += [("statement", flags, statement)]
+                return serd.Status.SUCCESS
+
+            def on_end(self, node):
+                self.events += [("end", node)]
+                return serd.Status.SUCCESS
+
+        s = serd.Node.curie("eg:s")
+        p1 = serd.Node.curie("eg:p1")
+        p2 = serd.Node.curie("eg:p2")
+        o1 = serd.Node.curie("eg:o1")
+        o2 = serd.Node.curie("eg:o2")
+
+        sink = TestSink()
+        reader = serd.Reader(self.world, serd.Syntax.TURTLE, 0, sink, 4096)
+
+        reader.start_file("file://" + self.ttl_path)
+        reader.read_document()
+        reader.finish()
+
+        self.assertEqual(
+            sink.events,
+            [
+                (
+                    "prefix",
+                    serd.Node.string("eg"),
+                    serd.Node.uri("http://example.org/"),
+                ),
+                ("base", serd.Node.uri("http://example.org/base")),
+                ("statement", 0, serd.Statement(s, p1, o1)),
+                ("statement", 0, serd.Statement(s, p2, o2)),
+            ],
         )
